@@ -18,7 +18,19 @@ arrivals_profile: [
 ]
 
 # Option B (override): absolute hourly rates (24 values). If provided, overrides arrivals_per_hour and profile.
-# hourly_arrivals: [4,4,4,4, 5,6, 8,9,10,11, 12,12,12, 11,10,9, 8,7,6, 5,5,4,3, 3]
+hourly_arrivals: [
+  3, 3, 3, 3, 3, 3,     # 00-05h (baja)
+  3,                    # 06-07h (baja)
+  6.5,                  # 07-08h (5–8 -> 6.5)
+  17.5, 17.5,           # 08-10h (15–20)
+  21.5, 21.5,           # 10-12h (18–25)
+  10, 10,               # 12-14h (8–12)
+  12.5, 12.5,           # 14-16h (10–15)
+  15, 15,               # 16-18h (12–18)
+  25, 25,               # 18-20h (20–30)
+  12.5, 12.5,           # 20-22h (10–15)
+  3, 3                   # 22-24h (baja)
+]
 
 stages:
   - name: triage

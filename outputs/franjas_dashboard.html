@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KPIs Simulación - Franjas Horarias</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #0b1220; color: #e6edf3; }
+    header { padding: 16px 24px; background: #111a2b; border-bottom: 1px solid #1f2a44; position: sticky; top: 0; }
+    h1 { font-size: 18px; margin: 0; }
+    main { padding: 24px; }
+    .card { background: #0f172a; border: 1px solid #1f2a44; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .kpi { background: #0b1220; border: 1px solid #233357; border-radius: 10px; padding: 12px; }
+    .kpi h3 { margin: 0 0 4px 0; font-size: 14px; color: #9fb4d4; font-weight: 600; }
+    .kpi .val { font-size: 24px; font-weight: 700; letter-spacing: 0.3px; }
+    .muted { color: #8aa4c3; }
+    .stage { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    footer { padding: 16px 24px; color: #8aa4c3; font-size: 12px; border-top: 1px solid #1f2a44; }
+    code { background: #0b1220; padding: 2px 6px; border-radius: 6px; border: 1px solid #1f2a44; }
+    a { color: #7dc4ff; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>KPIs Simulación • Franjas Horarias</h1>
+  </header>
+  <main>
+    <div class="card">
+      <div class="row">
+        <div class="kpi"><h3>Throughput</h3><div id="throughput" class="val">–</div></div>
+        <div class="kpi"><h3>LOS medio (h)</h3><div id="los_mean" class="val">–</div></div>
+        <div class="kpi"><h3>LOS p95 (h)</h3><div id="los_p95" class="val">–</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:16px;">Esperas por etapa</h2>
+      <div id="stages" class="row"></div>
+      <div class="muted" style="margin-top:8px;">Valores en horas</div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:16px;">Datos</h2>
+      <div class="muted">KPIs desde <code>franjas_kpis.json</code> y datos por paciente en <code>franjas_patients.csv</code>.</div>
+      <div style="margin-top:8px;"><a href="franjas_patients.csv" target="_blank" rel="noopener">Descargar pacientes CSV</a></div>
+    </div>
+  </main>
+  <footer>
+    Simulación con franjas horarias. Actualiza la página si vuelves a ejecutar la simulación.
+  </footer>
+
+  <script>
+    function fmt(x) {
+      if (x === null || x === undefined || Number.isNaN(x)) return '–';
+      const num = Number(x);
+      if (!Number.isFinite(num)) return '–';
+      return num.toFixed(2);
+    }
+
+    function stageCard(name, mean, p95) {
+      const div = document.createElement('div');
+      div.className = 'kpi';
+      div.innerHTML = `<h3>${name}</h3>
+        <div class="stage">
+          <div><div class="muted">Espera media</div><div class="val">${fmt(mean)}</div></div>
+          <div><div class="muted">Espera p95</div><div class="val">${fmt(p95)}</div></div>
+        </div>`;
+      return div;
+    }
+
+    async function loadKPIs() {
+      const res = await fetch('franjas_kpis.json', { cache: 'no-store' });
+      if (!res.ok) throw new Error('No se pudo cargar franjas_kpis.json');
+      const k = await res.json();
+
+      document.getElementById('throughput').textContent = (k.throughput ?? '–');
+      document.getElementById('los_mean').textContent = fmt(k.los_mean);
+      document.getElementById('los_p95').textContent = fmt(k.los_p95);
+
+      const stages = document.getElementById('stages');
+      stages.innerHTML = '';
+      const seen = new Set();
+      Object.keys(k).forEach(key => {
+        if (key.startsWith('wait_')) {
+          const parts = key.split('_'); // wait, stage, metric
+          // keys are like wait_triage_mean or wait_triage_p95
+          const stage = parts[1];
+          const metric = parts[2];
+          if (!seen.has(stage)) {
+            // find both metrics
+            const mean = k[`wait_${stage}_mean`];
+            const p95 = k[`wait_${stage}_p95`];
+            stages.appendChild(stageCard(stage, mean, p95));
+            seen.add(stage);
+          }
+        }
+      });
+    }
+
+    loadKPIs().catch(err => {
+      console.error(err);
+      alert('No se pudo cargar los KPIs: ' + err.message);
+    });
+  </script>
+</body>
+</html>

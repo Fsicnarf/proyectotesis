@@ -1,0 +1,13 @@
+{
+  "throughput": 63,
+  "los_mean": 43.793414965913314,
+  "los_p95": 53.10770851996433,
+  "wait_triage_mean": 1.150838199809608,
+  "wait_triage_p95": 2.5666757196906653,
+  "wait_consultation_mean": 18.53621842578475,
+  "wait_consultation_p95": 27.99092103570507,
+  "wait_diagnostics_mean": 24.189323980307453,
+  "wait_diagnostics_p95": 33.12849402361623,
+  "wait_treatment_mean": 10.540697308599503,
+  "wait_treatment_p95": 12.251588518775403
+}

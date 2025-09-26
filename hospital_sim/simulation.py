@@ -77,10 +77,10 @@ class SimConfig:
     seed: int
     sim_hours: float
     warmup_hours: float
+    stages: List[StageConfig]
     arrivals_per_hour: float
     arrivals_profile: Optional[List[float]] = None  # 24-length multipliers (optional)
     hourly_arrivals: Optional[List[float]] = None   # 24-length absolute rates (optional, overrides profile)
-    stages: List[StageConfig]
 
 
 @dataclass
