@@ -1,0 +1,6 @@
+{
+  "triage": "2 servidores, tiempos de servicio exponenciales con media de 0.15 horas (≈9 minutos).",
+  "consultation": "3 servidores, distribución log normal con media 0.5 h y sigma 0.4.",
+  "diagnostics": "2 servidores, distribución normal con media 0.7 h y desviación 0.2.",
+  "treatment": "2 servidores, distribución exponencial con media 0.8 h."
+}

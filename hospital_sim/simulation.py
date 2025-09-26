@@ -70,6 +70,7 @@ class StageConfig:
     name: str
     capacity: int
     service_time: Dict[str, Any]
+    capacity_schedule: Optional[List[int]] = None  # Optional 24-length hourly capacities
 
 
 @dataclass
@@ -110,8 +111,19 @@ class HospitalSim:
 
         # Resources by stage
         self.stages: List[StageConfig] = config.stages
+        # Compute max capacity per stage considering schedules (if any)
+        self.max_caps: Dict[str, int] = {}
+        for s in self.stages:
+            if s.capacity_schedule is not None:
+                if len(s.capacity_schedule) != 24:
+                    raise ValueError(f"capacity_schedule for stage {s.name} must have length 24")
+                max_c = max(int(s.capacity), int(max(s.capacity_schedule)))
+            else:
+                max_c = int(s.capacity)
+            self.max_caps[s.name] = max(1, max_c)
+
         self.resources: Dict[str, simpy.Resource] = {
-            s.name: simpy.Resource(self.env, capacity=s.capacity) for s in self.stages
+            s.name: simpy.Resource(self.env, capacity=self.max_caps[s.name]) for s in self.stages
         }
         self.service_dists: Dict[str, Distribution] = {
             s.name: make_distribution(s.service_time) for s in self.stages
@@ -120,6 +132,14 @@ class HospitalSim:
         # Data capture
         self.patients: List[PatientRecord] = []
         self._patient_seq = 0
+        # Blockers to emulate reduced capacity
+        self._blockers: Dict[str, List[simpy.events.Process]] = {s.name: [] for s in self.stages}
+        self._blocker_reqs: Dict[str, List[simpy.events.Event]] = {s.name: [] for s in self.stages}
+
+        # Start capacity managers if schedules present
+        for s in self.stages:
+            if s.capacity_schedule is not None:
+                self.env.process(self.capacity_manager(s))
 
     # ---------------
     # Arrival process
@@ -170,6 +190,61 @@ class HospitalSim:
                 pr = PatientRecord(id=pid, arrival_time=t)
                 self.patients.append(pr)
                 self.env.process(self.patient_flow(pr))
+
+    # ----------------------
+    # Capacity schedule logic
+    # ----------------------
+    def desired_capacity(self, stage: StageConfig, t: float) -> int:
+        if stage.capacity_schedule is None:
+            return int(stage.capacity)
+        hour = int(math.floor(t % 24))
+        return int(stage.capacity_schedule[hour])
+
+    def capacity_manager(self, stage: StageConfig):
+        name = stage.name
+        res = self.resources[name]
+        max_cap = self.max_caps[name]
+
+        def make_blocker():
+            req = res.request()
+            self._blocker_reqs[name].append(req)
+            yield req
+            try:
+                # Hold server indefinitely until interrupted
+                yield self.env.timeout(float('inf'))
+            except simpy.Interrupt:
+                pass
+            finally:
+                # release and remove
+                res.release(req)
+
+        def adjust():
+            desired = self.desired_capacity(stage, self.env.now)
+            desired = max(0, min(desired, max_cap))
+            # number of blockers needed to reduce effective capacity
+            need_blockers = max(0, max_cap - desired)
+            cur_blockers = len(self._blockers[name])
+            if cur_blockers < need_blockers:
+                # start additional blockers
+                for _ in range(need_blockers - cur_blockers):
+                    p = self.env.process(make_blocker())
+                    self._blockers[name].append(p)
+            elif cur_blockers > need_blockers:
+                # interrupt extra blockers
+                n_remove = cur_blockers - need_blockers
+                for _ in range(n_remove):
+                    p = self._blockers[name].pop()
+                    p.interrupt()
+
+        # Initial adjust
+        adjust()
+        while True:
+            # wait until next hour boundary
+            next_hour = math.floor(self.env.now) + 1
+            if next_hour <= self.env.now:
+                next_hour = self.env.now + 1
+            yield self.env.timeout(next_hour - self.env.now)
+            adjust()
 
     # -------------------
     # Patient flow process
@@ -258,6 +333,7 @@ def load_config(path: str) -> SimConfig:
             name=s["name"],
             capacity=int(s.get("capacity", 1)),
             service_time=s["service_time"],
+            capacity_schedule=s.get("capacity_schedule"),
         )
         for s in cfg["stages"]
     ]

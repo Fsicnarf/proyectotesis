@@ -25,6 +25,24 @@
     textarea { width: 100%; min-height: 90px; background: #0b1220; color: #e6edf3; border: 1px solid #233357; border-radius: 8px; padding: 8px; }
     canvas { width: 100%; height: 240px; background: #0b1220; border: 1px solid #233357; border-radius: 8px; }
     pre { background: #0b1220; border: 1px solid #233357; border-radius: 8px; padding: 12px; overflow: auto; }
+    .hour-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .hour-cell { background: #0b1220; border: 1px solid #233357; border-radius: 8px; padding: 10px; }
+    .hour-cell h4 { margin: 0 0 8px 0; font-size: 13px; color: #9fb4d4; }
+    .hour-controls { display: grid; grid-template-columns: 1fr 72px; gap: 8px; align-items: center; }
+    input[type="range"] { width: 100%; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #233357; padding: 8px; text-align: left; }
+    th { color: #9fb4d4; font-weight: 600; }
+    /* Modal styles */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .modal { width: min(760px, 95vw); background: #0f172a; border: 1px solid #1f2a44; border-radius: 12px; padding: 16px; }
+    .modal h3 { margin: 0 0 8px 0; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field { background: #0b1220; border: 1px solid #233357; border-radius: 10px; padding: 12px; }
+    .field label { display:block; font-size: 13px; color: #9fb4d4; margin-bottom: 6px; }
+    .field .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .field input[type="number"] { width: 100%; background: #0b1220; color: #e6edf3; border: 1px solid #233357; border-radius: 8px; padding: 6px; }
+    .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
   </style>
 </head>
 <body>
@@ -33,10 +51,78 @@
   </header>
   <main>
     <div class="card">
+      <div class="toolbar" style="justify-content: space-between;">
+        <div class="muted">Resultados agregados</div>
+        <div>
+          <button id="btnRecalc">Recalcular KPIs</button>
+        </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:16px;">Histogramas y Gráficas</h2>
+      <div class="row">
+        <div class="kpi" style="grid-column:1 / -1;">
+          <h3 style="margin-bottom:8px;">Histograma de LOS (horas)</h3>
+          <div class="toolbar"><button id="btnLosHist">Dibujar histograma LOS</button></div>
+          <canvas id="losHist" width="900" height="260"></canvas>
+        </div>
+        <div class="kpi" style="grid-column:1 / -1;">
+          <h3 style="margin-bottom:8px;">Esperas por etapa (media y p95)</h3>
+          <div class="toolbar"><button id="btnWaitBars">Dibujar barras de esperas</button></div>
+          <canvas id="waitBars" width="900" height="260"></canvas>
+        </div>
+      </div>
+    </div>
+      </div>
       <div class="row">
         <div class="kpi"><h3>Throughput</h3><div id="throughput" class="val">–</div></div>
         <div class="kpi"><h3>LOS medio (h)</h3><div id="los_mean" class="val">–</div></div>
         <div class="kpi"><h3>LOS p95 (h)</h3><div id="los_p95" class="val">–</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:16px;">Optimizar capacidad</h2>
+      <div class="muted">Busca capacidades por etapa que minimicen LOS y esperas (puedes ajustar pesos y límites).</div>
+      <div class="toolbar">
+        <label style="display:flex;align-items:center;gap:6px;">Trials <input id="optTrials" type="number" value="20" min="5" step="5" style="width:80px;"/></label>
+        <label style="display:flex;align-items:center;gap:6px;">Modo
+          <select id="optMode">
+            <option value="fixed">Capacidad fija</option>
+            <option value="schedule">Capacidad por turnos (24h)</option>
+          </select>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;">Preset
+          <select id="presetBounds">
+            <option value="">– Seleccionar –</option>
+            <option value="base">Base</option>
+            <option value="carga_alta">Carga alta (picos)</option>
+            <option value="noche">Noche (baja demanda)</option>
+          </select>
+        </label>
+        <button id="btnApplyPreset" class="secondary">Aplicar preset</button>
+      </div>
+      <div class="muted" style="margin-bottom:8px;">Se usan límites y pesos por defecto (puedes elegir Modo y aplicar Preset).</div>
+      <div class="row" style="display:none;">
+        <div class="kpi" style="grid-column: 1 / -1;">
+          <h3 style="margin-bottom:8px;">Límites de capacidad (JSON)</h3>
+          <div class="muted" style="margin-bottom:6px;">Ej: { "triage": [1,6], "consultation": [2,10] }</div>
+          <textarea id="optBounds" placeholder='{"triage":[1,6],"consultation":[2,10],"diagnostics":[1,8],"treatment":[1,6]}'></textarea>
+        </div>
+        <div class="kpi" style="grid-column: 1 / -1;">
+          <h3 style="margin-bottom:8px;">Pesos objetivo (JSON)</h3>
+          <div class="muted" style="margin-bottom:6px;">Ej: { "los_mean":1.0, "wait_p95":0.1, "cap_penalty_per_server":0.0, "cap_change_penalty":0.0 }</div>
+          <textarea id="optWeights" placeholder='{"los_mean":1.0,"wait_p95":0.1,"cap_penalty_per_server":0.0, "cap_change_penalty":0.0}'></textarea>
+        </div>
+      </div>
+      <div class="toolbar">
+        <button id="btnOptimize">Optimizar</button>
+        <button id="btnViewOptimized" class="secondary">Ver/Descargar optimized.yaml</button>
+        <button id="btnApplyOptimized">Aplicar y Recalcular</button>
+        <button id="btnAdvanced" class="secondary">Ajustes avanzados</button>
+      </div>
+      <div id="optResult" class="kpi">
+        <h3 style="margin-bottom:8px;">Resultado</h3>
+        <pre id="optOut"><code># Ejecuta la optimización para ver el mejor set de capacidades</code></pre>
       </div>
     </div>
 
@@ -69,6 +155,18 @@
     </div>
 
     <div class="card">
+      <h2 style="margin-top:0;font-size:16px;">Editor interactivo de franja horaria</h2>
+      <div class="muted">Ajusta la tasa de llegadas por hora con deslizadores y números. Puedes cargar/guardar en el servidor.</div>
+      <div class="toolbar">
+        <button id="btnHourlyLoad">Cargar del servidor</button>
+        <button id="btnHourlySave">Guardar en servidor</button>
+        <button id="btnHourlyToText" class="secondary">Volcar al área de texto</button>
+      </div>
+      <div id="hourGrid" class="hour-grid"></div>
+      <div class="muted" style="margin-top:8px;">Rango por defecto 0–40 pacientes/hora. Puedes editar los campos numéricos para valores fuera de rango.</div>
+    </div>
+
+    <div class="card">
       <h2 style="margin-top:0;font-size:16px;">Descripción de etapas</h2>
       <div class="muted">Edita lo que significa cada etapa. Se guarda en el navegador (localStorage) y puedes descargarlo.</div>
       <div id="stageDescContainer" class="row" style="margin-top:12px;"></div>
@@ -94,6 +192,268 @@
       const num = Number(x);
       if (!Number.isFinite(num)) return '–';
       return num.toFixed(2);
+    }
+
+    // ----- LOS Histogram -----
+    async function drawLosHistogram() {
+      const res = await fetch('franjas_patients.csv', { cache: 'no-store' });
+      if (!res.ok) throw new Error('No se pudo cargar franjas_patients.csv');
+      const text = await res.text();
+      const lines = text.trim().split(/\r?\n/);
+      if (lines.length < 2) throw new Error('CSV vacío');
+      const header = lines[0].split(',');
+      const idxLos = header.indexOf('los');
+      if (idxLos === -1) throw new Error('No existe columna los en CSV');
+      const los = [];
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i].split(',');
+        const v = parseFloat(row[idxLos]);
+        if (Number.isFinite(v)) los.push(v);
+      }
+      if (!los.length) throw new Error('Sin valores LOS');
+      const bins = 20;
+      const maxV = Math.max(...los);
+      const minV = 0;
+      const width = (maxV - minV) / bins;
+      const counts = new Array(bins).fill(0);
+      los.forEach(v => {
+        let idx = Math.floor((v - minV) / width);
+        if (idx >= bins) idx = bins - 1;
+        if (idx < 0) idx = 0;
+        counts[idx]++;
+      });
+      const cv = document.getElementById('losHist');
+      const ctx = cv.getContext('2d');
+      const W = cv.width, H = cv.height;
+      ctx.clearRect(0,0,W,H);
+      const padL = 40, padR = 10, padT = 10, padB = 30;
+      const plotW = W - padL - padR;
+      const plotH = H - padT - padB;
+      const maxC = Math.max(...counts);
+      ctx.strokeStyle = '#233357';
+      ctx.beginPath();
+      ctx.moveTo(padL, padT);
+      ctx.lineTo(padL, padT + plotH);
+      ctx.lineTo(padL + plotW, padT + plotH);
+      ctx.stroke();
+      const barW = plotW / bins * 0.8;
+      const gap = plotW / bins * 0.2;
+      for (let i = 0; i < bins; i++) {
+        const x = padL + i * (barW + gap) + gap/2;
+        const h = (counts[i] / maxC) * plotH;
+        const y = padT + plotH - h;
+        ctx.fillStyle = '#2a6aa8';
+        ctx.fillRect(x, y, barW, h);
+      }
+      ctx.fillStyle = '#9fb4d4';
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.fillText(maxC.toString(), 4, padT + 10);
+      ctx.fillText('0', 20, padT + plotH);
+    }
+
+    // ----- Waits mean/p95 bars -----
+    async function drawWaitBars() {
+      const res = await fetch('franjas_kpis.json', { cache: 'no-store' });
+      if (!res.ok) throw new Error('No se pudo cargar franjas_kpis.json');
+      const k = await res.json();
+      const stages = [];
+      const means = [];
+      const p95s = [];
+      Object.keys(k).forEach(key => {
+        if (key.startsWith('wait_') && key.endsWith('_mean')) {
+          const stage = key.split('_')[1];
+          stages.push(stage);
+          means.push(k[key] || 0);
+          p95s.push(k[`wait_${stage}_p95`] || 0);
+        }
+      });
+      const cv = document.getElementById('waitBars');
+      const ctx = cv.getContext('2d');
+      const W = cv.width, H = cv.height;
+      ctx.clearRect(0,0,W,H);
+      const padL = 40, padR = 10, padT = 10, padB = 60;
+      const plotW = W - padL - padR;
+      const plotH = H - padT - padB;
+      const maxV = Math.max(1, ...means, ...p95s);
+      ctx.strokeStyle = '#233357';
+      ctx.beginPath();
+      ctx.moveTo(padL, padT);
+      ctx.lineTo(padL, padT + plotH);
+      ctx.lineTo(padL + plotW, padT + plotH);
+      ctx.stroke();
+      const n = stages.length;
+      const groupW = plotW / Math.max(1, n);
+      const barW = groupW * 0.35;
+      for (let i = 0; i < n; i++) {
+        const baseX = padL + i * groupW + groupW*0.15;
+        const h1 = (means[i] / maxV) * plotH;
+        const h2 = (p95s[i] / maxV) * plotH;
+        const y1 = padT + plotH - h1;
+        const y2 = padT + plotH - h2;
+        ctx.fillStyle = '#2a6aa8';
+        ctx.fillRect(baseX, y1, barW, h1);
+        ctx.fillStyle = '#6ea8dc';
+        ctx.fillRect(baseX + barW + 6, y2, barW, h2);
+        ctx.fillStyle = '#9fb4d4';
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.translate(baseX + barW/2, padT + plotH + 14);
+        ctx.rotate(-Math.PI/4);
+        ctx.fillText(stages[i], 0, 0);
+        ctx.setTransform(1,0,0,1,0,0);
+      }
+      ctx.fillStyle = '#9fb4d4';
+      ctx.fillText(maxV.toFixed(1), 4, padT + 10);
+      ctx.fillText('0', 20, padT + plotH);
+      ctx.fillText('Azul: media  •  Celeste: p95', padL, H - 8);
+    }
+
+    // ====== Optimization UI ======
+    function parseJSONOrEmpty(val) {
+      try {
+        const obj = JSON.parse(val);
+        return obj;
+      } catch { return {}; }
+    }
+
+    async function runOptimize() {
+      const trials = Math.max(5, parseInt(document.getElementById('optTrials').value || '20', 10));
+      const bounds = parseJSONOrEmpty(document.getElementById('optBounds').value || '{}');
+      const weights = parseJSONOrEmpty(document.getElementById('optWeights').value || '{}');
+      const modeSel = document.getElementById('optMode');
+      const optimize_mode = modeSel ? modeSel.value : 'fixed';
+      const btn = document.getElementById('btnOptimize');
+      const label = btn.textContent;
+      btn.textContent = 'Optimizando…';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/optimize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ n_trials: trials, capacity_bounds: bounds, weights: weights, optimize_mode })
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(t);
+        }
+        const data = await res.json();
+        document.getElementById('optOut').innerText = JSON.stringify(data, null, 2);
+        // Refresh KPIs after optimization
+        await loadKPIs();
+        try { await loadArrivalsFromCSV(); } catch {}
+      } catch (e) {
+        alert('Error en optimización: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    }
+
+    // View/download and apply optimized config
+    async function viewOptimized() {
+      try {
+        const res = await fetch('/api/optimized_yaml', { cache: 'no-store' });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        const content = data.content || '# optimized.yaml no encontrado';
+        document.getElementById('optOut').innerText = content;
+        // Also open download in a new tab
+        window.open('/download/optimized.yaml', '_blank');
+      } catch (e) {
+        alert('No se pudo obtener optimized.yaml: ' + e.message);
+      }
+    }
+
+    async function applyOptimizedAndRecalc() {
+      const btn = document.getElementById('btnApplyOptimized');
+      const label = btn.textContent;
+      btn.textContent = 'Aplicando…';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/apply_optimized', { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+        // Recalc after apply
+        const r2 = await fetch('/api/recalc', { method: 'POST' });
+        if (!r2.ok) throw new Error(await r2.text());
+        await loadKPIs();
+        try { await loadArrivalsFromCSV(); } catch {}
+        alert('Configuración aplicada a base.yaml y KPIs recalculados.');
+      } catch (e) {
+        alert('Error al aplicar optimized.yaml: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    }
+
+    // Wire optimization button
+    document.addEventListener('DOMContentLoaded', () => {
+      // Prefill default limits and weights if empty
+      const trialsEl = document.getElementById('optTrials');
+      if (trialsEl && (!trialsEl.value || Number(trialsEl.value) < 5)) trialsEl.value = '30';
+      const boundsEl = document.getElementById('optBounds');
+      const defaultBounds = '{"triage":[1,6],"consultation":[2,12],"diagnostics":[1,10],"treatment":[1,8]}';
+      if (boundsEl && !boundsEl.value) boundsEl.value = defaultBounds;
+      const weightsEl = document.getElementById('optWeights');
+      const defaultWeights = '{"los_mean":1.0,"wait_p95":0.1,"cap_penalty_per_server":0.0, "cap_change_penalty":0.0}';
+      if (weightsEl && !weightsEl.value) weightsEl.value = defaultWeights;
+
+      // Toggle schedule info note
+      const optMode = document.getElementById('optMode');
+      const weightsMuted = Array.from(document.querySelectorAll('#optWeights ~ .muted'));
+      if (optMode) {
+        optMode.addEventListener('change', () => {
+          // no-op now; space for future UI hints
+        });
+      }
+
+      const btnOpt = document.getElementById('btnOptimize');
+      if (btnOpt) btnOpt.addEventListener('click', runOptimize);
+      const btnViewOpt = document.getElementById('btnViewOptimized');
+      if (btnViewOpt) btnViewOpt.addEventListener('click', viewOptimized);
+      const btnApplyOpt = document.getElementById('btnApplyOptimized');
+      if (btnApplyOpt) btnApplyOpt.addEventListener('click', applyOptimizedAndRecalc);
+      // Presets
+      const btnPreset = document.getElementById('btnApplyPreset');
+      if (btnPreset) btnPreset.addEventListener('click', () => {
+        const sel = document.getElementById('presetBounds').value;
+        const map = {
+          base: { triage:[1,6], consultation:[2,12], diagnostics:[1,10], treatment:[1,8] },
+          carga_alta: { triage:[2,8], consultation:[4,16], diagnostics:[2,14], treatment:[2,12] },
+          noche: { triage:[1,4], consultation:[1,8], diagnostics:[1,6], treatment:[1,6] },
+        };
+        const el = document.getElementById('optBounds');
+        if (sel && map[sel]) el.value = JSON.stringify(map[sel]);
+      });
+      // History
+      const btnHist = document.getElementById('btnLoadHistory');
+      if (btnHist) btnHist.addEventListener('click', loadHistory);
+      // Charts
+      const btnLos = document.getElementById('btnLosHist');
+      if (btnLos) btnLos.addEventListener('click', () => drawLosHistogram().catch(e => alert(e.message)));
+      const btnWait = document.getElementById('btnWaitBars');
+      if (btnWait) btnWait.addEventListener('click', () => drawWaitBars().catch(e => alert(e.message)));
+      // Advanced modal
+      const btnAdv = document.getElementById('btnAdvanced');
+      if (btnAdv) btnAdv.addEventListener('click', openAdvancedModal);
+    });
+
+    // ----- History UI -----
+    async function loadHistory() {
+      const res = await fetch('/api/history', { cache: 'no-store' });
+      if (!res.ok) { alert('No se pudo cargar historial'); return; }
+      const data = await res.json();
+      const tbody = document.getElementById('histBody');
+      tbody.innerHTML = '';
+      data.forEach(entry => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${entry.timestamp}</td><td>${entry.kind}</td><td>${fmt(entry.kpis?.los_mean)}</td><td>${fmt(entry.kpis?.los_p95)}</td>`;
+        const td = document.createElement('td');
+        const aK = document.createElement('a'); aK.href = entry.paths.kpis ? `/${entry.paths.kpis}` : '#'; aK.textContent = 'KPIs'; aK.target = '_blank'; aK.rel = 'noopener';
+        const aP = document.createElement('a'); aP.href = entry.paths.patients ? `/${entry.paths.patients}` : '#'; aP.textContent = 'CSV'; aP.target = '_blank'; aP.rel = 'noopener';
+        td.appendChild(aK); td.appendChild(document.createTextNode(' | ')); td.appendChild(aP);
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      });
     }
 
     function stageCard(name, mean, p95) {
@@ -310,7 +670,207 @@
       if (btnSave) btnSave.addEventListener('click', saveStageDescriptions);
       const btnDown = document.getElementById('btnDownloadDesc');
       if (btnDown) btnDown.addEventListener('click', downloadStageDescriptions);
+
+      // Recalc button to run simulation on server and refresh KPIs and arrivals
+      const btnRecalc = document.getElementById('btnRecalc');
+      if (btnRecalc) btnRecalc.addEventListener('click', async () => {
+        const label = btnRecalc.textContent;
+        btnRecalc.textContent = 'Recalculando…';
+        btnRecalc.disabled = true;
+        try {
+          const res = await fetch('/api/recalc', { method: 'POST' });
+          if (!res.ok) {
+            const t = await res.text();
+            throw new Error(t);
+          }
+          await loadKPIs();
+          // Try to refresh arrivals chart too
+          try { await loadArrivalsFromCSV(); } catch (e) { console.warn(e); }
+        } catch (e) {
+          alert('Error al recalcular: ' + e.message);
+        } finally {
+          btnRecalc.disabled = false;
+          btnRecalc.textContent = label;
+        }
+      });
+      // Build hourly editor UI
+      buildHourlyEditor();
+      const btnHL = document.getElementById('btnHourlyLoad');
+      if (btnHL) btnHL.addEventListener('click', () => loadHourlyFromServer().catch(e => alert('Error al cargar: ' + e.message)));
+      const btnHS = document.getElementById('btnHourlySave');
+      if (btnHS) btnHS.addEventListener('click', () => saveHourlyToServer().catch(e => alert('Error al guardar: ' + e.message)));
+      const btnHT = document.getElementById('btnHourlyToText');
+      if (btnHT) btnHT.addEventListener('click', () => {
+        const arr = getHourlyArrayFromUI();
+        document.getElementById('hourlyInput').value = arr.join(', ');
+      });
     });
+
+    // ====== Interactive hourly editor ======
+    function buildHourlyEditor() {
+      const grid = document.getElementById('hourGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+      for (let h = 0; h < 24; h++) {
+        const cell = document.createElement('div');
+        cell.className = 'hour-cell';
+        const title = document.createElement('h4');
+        title.textContent = `${String(h).padStart(2,'0')}:00`;
+        const wrap = document.createElement('div');
+        wrap.className = 'hour-controls';
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = '0';
+        slider.max = '40';
+        slider.step = '0.5';
+        slider.value = '0';
+        slider.dataset.hour = String(h);
+        const num = document.createElement('input');
+        num.type = 'number';
+        num.step = '0.5';
+        num.min = '0';
+        num.value = '0';
+        num.dataset.hour = String(h);
+        slider.addEventListener('input', () => { num.value = slider.value; });
+        num.addEventListener('input', () => { slider.value = num.value || '0'; });
+        wrap.appendChild(slider);
+        wrap.appendChild(num);
+        cell.appendChild(title);
+        cell.appendChild(wrap);
+        grid.appendChild(cell);
+      }
+    }
+
+    function setHourlyArrayToUI(arr) {
+      const sliders = Array.from(document.querySelectorAll('#hourGrid input[type="range"]'));
+      const nums = Array.from(document.querySelectorAll('#hourGrid input[type="number"]'));
+      for (let i = 0; i < 24; i++) {
+        const v = Number(arr[i] ?? 0);
+        const s = sliders.find(e => Number(e.dataset.hour) === i);
+        const n = nums.find(e => Number(e.dataset.hour) === i);
+        if (s) s.value = String(v);
+        if (n) n.value = String(v);
+      }
+    }
+
+    function getHourlyArrayFromUI() {
+      const nums = Array.from(document.querySelectorAll('#hourGrid input[type="number"]'));
+      const arr = new Array(24).fill(0);
+      nums.forEach(el => {
+        const h = Number(el.dataset.hour);
+        const v = parseFloat(el.value);
+        arr[h] = Number.isFinite(v) ? v : 0;
+      });
+      return arr;
+    }
+
+    async function loadHourlyFromServer() {
+      const res = await fetch('/api/config_hourly', { cache: 'no-store' });
+      if (!res.ok) throw new Error('No se pudo leer configs/base.yaml');
+      const data = await res.json();
+      if (!data.hourly_arrivals || data.hourly_arrivals.length !== 24) throw new Error('No hay hourly_arrivals válido.');
+      setHourlyArrayToUI(data.hourly_arrivals);
+    }
+
+    async function saveHourlyToServer() {
+      const arr = getHourlyArrayFromUI();
+      const res = await fetch('/api/config_hourly', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hourly_arrivals: arr })
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error('Error del servidor: ' + t);
+      }
+      alert('hourly_arrivals guardado en configs/base.yaml');
+    }
+
+    // ====== Advanced Settings Modal (bounds & weights) ======
+    function ensureAdvancedModal() {
+      if (document.getElementById('advBackdrop')) return;
+      const backdrop = document.createElement('div');
+      backdrop.id = 'advBackdrop';
+      backdrop.className = 'modal-backdrop';
+      backdrop.innerHTML = `
+        <div class="modal">
+          <h3>Ajustes avanzados</h3>
+          <div class="muted" style="margin-bottom:8px;">Configura los límites por etapa y los pesos del objetivo. Estos valores actualizarán los parámetros internos sin mostrar JSON.</div>
+          <div class="grid2">
+            <div class="field">
+              <label>Límites de capacidad por etapa (mín–máx)</label>
+              <div class="row"><input id="b_triage_lb" type="number" min="0" value="1" /><input id="b_triage_ub" type="number" min="1" value="6" /></div>
+              <div class="row"><input id="b_cons_lb" type="number" min="0" value="2" /><input id="b_cons_ub" type="number" min="1" value="12" /></div>
+              <div class="row"><input id="b_diag_lb" type="number" min="0" value="1" /><input id="b_diag_ub" type="number" min="1" value="10" /></div>
+              <div class="row"><input id="b_treat_lb" type="number" min="0" value="1" /><input id="b_treat_ub" type="number" min="1" value="8" /></div>
+              <div class="muted" style="margin-top:6px;">Orden: triage, consultation, diagnostics, treatment</div>
+            </div>
+            <div class="field">
+              <label>Pesos del objetivo</label>
+              <div class="row"><input id="w_los_mean" type="number" step="0.01" value="1.0" /><input id="w_wait_p95" type="number" step="0.01" value="0.1" /></div>
+              <div class="row"><input id="w_cap_pen" type="number" step="0.01" value="0.0" /><input id="w_change_pen" type="number" step="0.01" value="0.0" /></div>
+              <div class="muted" style="margin-top:6px;">LOS mean, wait p95, penalización por servidor, penalización por cambios de capacidad (solo schedule)</div>
+            </div>
+          </div>
+          <div class="actions">
+            <button id="advCancel" class="secondary">Cancelar</button>
+            <button id="advApply">Aplicar</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(backdrop);
+      backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeAdvancedModal(); });
+      document.getElementById('advCancel').addEventListener('click', closeAdvancedModal);
+      document.getElementById('advApply').addEventListener('click', applyAdvancedModal);
+    }
+
+    function openAdvancedModal() {
+      ensureAdvancedModal();
+      // preload from hidden JSON if available
+      const bounds = parseJSONOrEmpty(document.getElementById('optBounds')?.value || '{}');
+      const weights = parseJSONOrEmpty(document.getElementById('optWeights')?.value || '{}');
+      const get = (obj, path, d) => (obj && obj[path] != null ? obj[path] : d);
+      document.getElementById('b_triage_lb').value = get(bounds.triage?.[0], 0, bounds.triage?.[0] ?? 1);
+      document.getElementById('b_triage_ub').value = get(bounds.triage?.[1], 1, bounds.triage?.[1] ?? 6);
+      document.getElementById('b_cons_lb').value = get(bounds.consultation?.[0], 0, bounds.consultation?.[0] ?? 2);
+      document.getElementById('b_cons_ub').value = get(bounds.consultation?.[1], 1, bounds.consultation?.[1] ?? 12);
+      document.getElementById('b_diag_lb').value = get(bounds.diagnostics?.[0], 0, bounds.diagnostics?.[0] ?? 1);
+      document.getElementById('b_diag_ub').value = get(bounds.diagnostics?.[1], 1, bounds.diagnostics?.[1] ?? 10);
+      document.getElementById('b_treat_lb').value = get(bounds.treatment?.[0], 0, bounds.treatment?.[0] ?? 1);
+      document.getElementById('b_treat_ub').value = get(bounds.treatment?.[1], 1, bounds.treatment?.[1] ?? 8);
+      document.getElementById('w_los_mean').value = weights.los_mean ?? 1.0;
+      document.getElementById('w_wait_p95').value = weights.wait_p95 ?? 0.1;
+      document.getElementById('w_cap_pen').value = weights.cap_penalty_per_server ?? 0.0;
+      document.getElementById('w_change_pen').value = weights.cap_change_penalty ?? 0.0;
+      document.getElementById('advBackdrop').style.display = 'flex';
+    }
+
+    function closeAdvancedModal() {
+      const el = document.getElementById('advBackdrop');
+      if (el) el.style.display = 'none';
+    }
+
+    function applyAdvancedModal() {
+      // read values and update hidden textareas
+      const b = {
+        triage: [parseInt(document.getElementById('b_triage_lb').value||'1',10), parseInt(document.getElementById('b_triage_ub').value||'6',10)],
+        consultation: [parseInt(document.getElementById('b_cons_lb').value||'2',10), parseInt(document.getElementById('b_cons_ub').value||'12',10)],
+        diagnostics: [parseInt(document.getElementById('b_diag_lb').value||'1',10), parseInt(document.getElementById('b_diag_ub').value||'10',10)],
+        treatment: [parseInt(document.getElementById('b_treat_lb').value||'1',10), parseInt(document.getElementById('b_treat_ub').value||'8',10)],
+      };
+      const w = {
+        los_mean: parseFloat(document.getElementById('w_los_mean').value||'1.0'),
+        wait_p95: parseFloat(document.getElementById('w_wait_p95').value||'0.1'),
+        cap_penalty_per_server: parseFloat(document.getElementById('w_cap_pen').value||'0.0'),
+        cap_change_penalty: parseFloat(document.getElementById('w_change_pen').value||'0.0'),
+      };
+      const boundsEl = document.getElementById('optBounds');
+      const weightsEl = document.getElementById('optWeights');
+      if (boundsEl) boundsEl.value = JSON.stringify(b);
+      if (weightsEl) weightsEl.value = JSON.stringify(w);
+      closeAdvancedModal();
+      alert('Ajustes avanzados aplicados. Ahora puedes ejecutar Optimizar.');
+    }
   </script>
 </body>
 </html>

@@ -39,6 +39,10 @@ stages:
       type: exponential
       params:
         mean: 0.15   # 9 minutes
+    # Optional: capacity per hour (24 values). Overrides 'capacity' dynamically hour-by-hour.
+    capacity_schedule: [
+      1,1,1,1, 1,1, 1,2,2,2, 2,2, 2,2,2, 2,2,2, 2,2,2,2, 1,1
+    ]
 
   - name: consultation
     capacity: 3
@@ -47,6 +51,9 @@ stages:
       params:
         mean: 0.5    # 30 minutes average
         sigma: 0.4
+    capacity_schedule: [
+      2,2,2,2, 2,2, 3,4,5,5, 6,6, 6,5,5, 5,4,4, 6,6,5,4, 3,3
+    ]
 
   - name: diagnostics
     capacity: 2
@@ -55,6 +62,9 @@ stages:
       params:
         mean: 0.7
         std: 0.2
+    capacity_schedule: [
+      1,1,1,1, 1,1, 1,2,2,2, 3,3, 3,3,2, 2,2,2, 3,3,2,2, 1,1
+    ]
 
   - name: treatment
     capacity: 2
@@ -62,3 +72,6 @@ stages:
       type: exponential
       params:
         mean: 0.8
+    capacity_schedule: [
+      1,1,1,1, 1,1, 2,2,2,2, 2,2, 2,2,2, 2,2,2, 3,3,2,2, 1,1
+    ]
