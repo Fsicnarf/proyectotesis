@@ -19,6 +19,12 @@
     footer { padding: 16px 24px; color: #8aa4c3; font-size: 12px; border-top: 1px solid #1f2a44; }
     code { background: #0b1220; padding: 2px 6px; border-radius: 6px; border: 1px solid #1f2a44; }
     a { color: #7dc4ff; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    button { background: #184a7a; color: white; border: 1px solid #2a6aa8; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+    button.secondary { background: #0b1220; border-color: #2a6aa8; color: #9fb4d4; }
+    textarea { width: 100%; min-height: 90px; background: #0b1220; color: #e6edf3; border: 1px solid #233357; border-radius: 8px; padding: 8px; }
+    canvas { width: 100%; height: 240px; background: #0b1220; border: 1px solid #233357; border-radius: 8px; }
+    pre { background: #0b1220; border: 1px solid #233357; border-radius: 8px; padding: 12px; overflow: auto; }
   </style>
 </head>
 <body>
@@ -38,6 +44,38 @@
       <h2 style="margin-top:0;font-size:16px;">Esperas por etapa</h2>
       <div id="stages" class="row"></div>
       <div class="muted" style="margin-top:8px;">Valores en horas</div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:16px;">Llegadas por hora (estimadas desde CSV)</h2>
+      <div class="toolbar">
+        <button id="btnArrivals">Actualizar gráfica</button>
+        <span class="muted">Fuente: <code>franjas_patients.csv</code> (usa arrival_time)</span>
+      </div>
+      <canvas id="arrivalsChart" width="900" height="260"></canvas>
+      <div class="muted" style="margin-top:8px;">Tasa estimada (pacientes/hora) promediada por ciclo de 24h</div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:16px;">Definir franja horaria (hourly_arrivals)</h2>
+      <div class="muted">Pega 24 valores (0–23h), separados por coma o espacios. Generaremos el fragmento YAML.</div>
+      <textarea id="hourlyInput" placeholder="e.g. 3,3,3,3,3,3, 3, 6.5, 17.5,17.5, 21.5,21.5, 10,10, 12.5,12.5, 15,15, 25,25, 12.5,12.5, 3,3"></textarea>
+      <div class="toolbar">
+        <button id="btnGenYaml">Generar YAML</button>
+        <button id="btnCopyYaml" class="secondary">Copiar</button>
+      </div>
+      <pre id="yamlOut"><code># YAML generado aparecerá aquí</code></pre>
+      <div class="muted">Pega este bloque en <code>configs/base.yaml</code> bajo <code>hourly_arrivals:</code>.</div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:16px;">Descripción de etapas</h2>
+      <div class="muted">Edita lo que significa cada etapa. Se guarda en el navegador (localStorage) y puedes descargarlo.</div>
+      <div id="stageDescContainer" class="row" style="margin-top:12px;"></div>
+      <div class="toolbar" style="margin-top:12px;">
+        <button id="btnSaveDesc">Guardar</button>
+        <button id="btnDownloadDesc" class="secondary">Descargar JSON</button>
+      </div>
     </div>
 
     <div class="card">
@@ -81,26 +119,197 @@
       const stages = document.getElementById('stages');
       stages.innerHTML = '';
       const seen = new Set();
+      const stageNames = [];
       Object.keys(k).forEach(key => {
         if (key.startsWith('wait_')) {
           const parts = key.split('_'); // wait, stage, metric
           // keys are like wait_triage_mean or wait_triage_p95
           const stage = parts[1];
-          const metric = parts[2];
           if (!seen.has(stage)) {
             // find both metrics
             const mean = k[`wait_${stage}_mean`];
             const p95 = k[`wait_${stage}_p95`];
             stages.appendChild(stageCard(stage, mean, p95));
             seen.add(stage);
+            stageNames.push(stage);
           }
         }
       });
+      // Initialize stage descriptions UI once we know stage names
+      initStageDescriptions(stageNames);
     }
 
-    loadKPIs().catch(err => {
-      console.error(err);
-      alert('No se pudo cargar los KPIs: ' + err.message);
+    // ----- Llegadas por hora desde CSV -----
+    async function loadArrivalsFromCSV() {
+      const res = await fetch('franjas_patients.csv', { cache: 'no-store' });
+      if (!res.ok) throw new Error('No se pudo cargar franjas_patients.csv');
+      const text = await res.text();
+      const lines = text.trim().split(/\r?\n/);
+      if (lines.length < 2) throw new Error('CSV vacío');
+      const header = lines[0].split(',');
+      const idxArrival = header.indexOf('arrival_time');
+      if (idxArrival === -1) throw new Error('No existe columna arrival_time en CSV');
+      const counts = new Array(24).fill(0);
+      let maxT = 0;
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i].split(',');
+        const t = parseFloat(row[idxArrival]);
+        if (!Number.isFinite(t)) continue;
+        maxT = Math.max(maxT, t);
+        const h = Math.floor((t % 24 + 24) % 24);
+        counts[h]++;
+      }
+      const cycles = Math.max(1, Math.floor(maxT / 24));
+      const rates = counts.map(c => c / cycles);
+      renderArrivalsChart(rates);
+    }
+
+    function renderArrivalsChart(rates) {
+      const cv = document.getElementById('arrivalsChart');
+      const ctx = cv.getContext('2d');
+      const W = cv.width, H = cv.height;
+      ctx.clearRect(0,0,W,H);
+      const padL = 40, padR = 10, padT = 10, padB = 30;
+      const plotW = W - padL - padR;
+      const plotH = H - padT - padB;
+      const maxRate = Math.max(1, Math.max(...rates));
+      // axes
+      ctx.strokeStyle = '#233357';
+      ctx.beginPath();
+      ctx.moveTo(padL, padT);
+      ctx.lineTo(padL, padT + plotH);
+      ctx.lineTo(padL + plotW, padT + plotH);
+      ctx.stroke();
+      // bars
+      const n = 24;
+      const barW = plotW / n * 0.8;
+      const gap = plotW / n * 0.2;
+      for (let i = 0; i < n; i++) {
+        const x = padL + i * (barW + gap) + gap/2;
+        const h = (rates[i] / maxRate) * plotH;
+        const y = padT + plotH - h;
+        ctx.fillStyle = '#2a6aa8';
+        ctx.fillRect(x, y, barW, h);
+      }
+      // labels
+      ctx.fillStyle = '#9fb4d4';
+      ctx.font = '12px system-ui, sans-serif';
+      for (let i = 0; i < n; i += 2) {
+        const x = padL + i * (barW + gap) + gap/2 + barW/2;
+        ctx.fillText(i.toString().padStart(2,'0')+':00', x-12, padT + plotH + 18);
+      }
+      ctx.fillText(maxRate.toFixed(1), 4, padT + 10);
+      ctx.fillText('0', 20, padT + plotH);
+    }
+
+    // ----- Generador YAML hourly_arrivals -----
+    function parse24(input) {
+      const parts = input.replace(/\n/g,' ').split(/[,\s]+/).filter(Boolean);
+      const arr = parts.map(Number).filter(x => Number.isFinite(x));
+      if (arr.length !== 24) throw new Error('Se requieren exactamente 24 valores. Encontrados: ' + arr.length);
+      return arr;
+    }
+
+    function genYamlHourly(arr) {
+      const vals = arr.map(v => (Number.isInteger(v) ? v.toString() : Number(v.toFixed(2)).toString())).join(', ');
+      return `hourly_arrivals: [\n  ${vals}\n]`;
+    }
+
+    // ----- Descripciones de etapas -----
+    async function initStageDescriptions(stageNames) {
+      const container = document.getElementById('stageDescContainer');
+      if (!container) return;
+      let saved = {};
+      try {
+        const res = await fetch('/api/stage_descriptions', { cache: 'no-store' });
+        if (res.ok) saved = await res.json();
+        else saved = JSON.parse(localStorage.getItem('stage_descriptions') || '{}');
+      } catch (e) {
+        saved = JSON.parse(localStorage.getItem('stage_descriptions') || '{}');
+      }
+      container.innerHTML = '';
+      stageNames.forEach(name => {
+        const wrap = document.createElement('div');
+        wrap.className = 'kpi';
+        const ta = document.createElement('textarea');
+        ta.placeholder = `Describe la etapa "${name}"...`;
+        ta.value = saved[name] || '';
+        wrap.innerHTML = `<h3 style="margin-bottom:8px;">${name}</h3>`;
+        wrap.appendChild(ta);
+        container.appendChild(wrap);
+      });
+    }
+
+    async function saveStageDescriptions() {
+      const container = document.getElementById('stageDescContainer');
+      if (!container) return;
+      const blocks = Array.from(container.querySelectorAll('.kpi'));
+      const data = {};
+      blocks.forEach(block => {
+        const name = block.querySelector('h3').textContent.trim();
+        const text = block.querySelector('textarea').value;
+        data[name] = text;
+      });
+      // Save to API, fallback to localStorage
+      try {
+        const res = await fetch('/api/stage_descriptions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) throw new Error('API error');
+        localStorage.setItem('stage_descriptions', JSON.stringify(data));
+        alert('Descripciones guardadas en el servidor.');
+      } catch (e) {
+        localStorage.setItem('stage_descriptions', JSON.stringify(data));
+        alert('Servidor no disponible. Descripciones guardadas localmente.');
+      }
+    }
+
+    function downloadStageDescriptions() {
+      const data = localStorage.getItem('stage_descriptions') || '{}';
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'stage_descriptions.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // ----- Event wiring -----
+    document.addEventListener('DOMContentLoaded', () => {
+      loadKPIs().catch(err => {
+        console.error(err);
+        alert('No se pudo cargar los KPIs: ' + err.message);
+      });
+      const btnArr = document.getElementById('btnArrivals');
+      if (btnArr) btnArr.addEventListener('click', () => {
+        loadArrivalsFromCSV().catch(err => {
+          console.error(err);
+          alert('No se pudo calcular llegadas por hora: ' + err.message);
+        });
+      });
+      const btnGen = document.getElementById('btnGenYaml');
+      if (btnGen) btnGen.addEventListener('click', () => {
+        try {
+          const arr = parse24(document.getElementById('hourlyInput').value);
+          const y = genYamlHourly(arr);
+          document.getElementById('yamlOut').innerHTML = `<code>${y.replace(/</g,'&lt;')}</code>`;
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+      const btnCopy = document.getElementById('btnCopyYaml');
+      if (btnCopy) btnCopy.addEventListener('click', async () => {
+        const text = document.getElementById('yamlOut').innerText;
+        if (!text || text.includes('YAML generado')) { alert('No hay YAML para copiar.'); return; }
+        try { await navigator.clipboard.writeText(text); alert('YAML copiado al portapapeles.'); } catch(e) { alert('No se pudo copiar: ' + e.message); }
+      });
+      const btnSave = document.getElementById('btnSaveDesc');
+      if (btnSave) btnSave.addEventListener('click', saveStageDescriptions);
+      const btnDown = document.getElementById('btnDownloadDesc');
+      if (btnDown) btnDown.addEventListener('click', downloadStageDescriptions);
     });
   </script>
 </body>
