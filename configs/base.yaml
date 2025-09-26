@@ -1,0 +1,52 @@
+# Base configuration for hospital simulation (time units: hours)
+seed: 42
+sim_hours: 72            # total simulated hours
+warmup_hours: 12        # discard KPIs for arrivals before this time
+arrivals_per_hour: 8    # average patient arrivals per hour (Poisson)
+
+# Option A: Multiplicative hourly profile (24 values). Effective rate = arrivals_per_hour * profile[hour].
+# Example: picos en día, baja en noche.
+arrivals_profile: [
+  0.3, 0.3, 0.3, 0.3,  # 00-03h
+  0.4, 0.5,            # 04-05h
+  0.8, 1.0, 1.2, 1.3,  # 06-09h
+  1.4, 1.5, 1.5,       # 10-12h
+  1.3, 1.2, 1.1,       # 13-15h
+  1.0, 0.9, 0.8,       # 16-18h
+  0.7, 0.6, 0.5, 0.4,  # 19-22h
+  0.3                  # 23h
+]
+
+# Option B (override): absolute hourly rates (24 values). If provided, overrides arrivals_per_hour and profile.
+# hourly_arrivals: [4,4,4,4, 5,6, 8,9,10,11, 12,12,12, 11,10,9, 8,7,6, 5,5,4,3, 3]
+
+stages:
+  - name: triage
+    capacity: 2
+    service_time:
+      type: exponential
+      params:
+        mean: 0.15   # 9 minutes
+
+  - name: consultation
+    capacity: 3
+    service_time:
+      type: lognormal
+      params:
+        mean: 0.5    # 30 minutes average
+        sigma: 0.4
+
+  - name: diagnostics
+    capacity: 2
+    service_time:
+      type: normal
+      params:
+        mean: 0.7
+        std: 0.2
+
+  - name: treatment
+    capacity: 2
+    service_time:
+      type: exponential
+      params:
+        mean: 0.8
